@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Reactive.Linq;
@@ -16,49 +15,47 @@ namespace VpnProxyChanger
 {
     class Program
     {
-        private static string startupIpAddress = GetLocalIPAddress();
+        private static string startupIpAddress = GetPhysicalIPAdress();
         private static ManualResetEvent manualResetEvent;
-        private static Process mstscProcess;
 
         static void Main(string[] args)
         {
             var networkAddressChanged = Observable.FromEventPattern<NetworkAddressChangedEventHandler, EventArgs>(handler => NetworkChange.NetworkAddressChanged += handler,
                                                                                                     handler => NetworkChange.NetworkAddressChanged -= handler);
-            
-            
-            networkAddressChanged.Throttle(TimeSpan.FromSeconds(3)).Subscribe(pattern =>
-            {
-                var localIpAddress = GetLocalIPAddress();
 
-                Console.WriteLine(localIpAddress);
-
-                if (localIpAddress == "10.202.208.188")
+            networkAddressChanged.Select(pattern => GetPhysicalIPAdress())
+                .DistinctUntilChanged().Subscribe(localIpAddress =>
                 {
-                    Console.WriteLine("Enabling proxy");
-                    EnableProxy();
+                    Console.WriteLine(localIpAddress);
 
-                    if (!Process.GetProcessesByName("mstsc").Any())
+                    if (localIpAddress == "10.202.208.188")
                     {
-                        mstscProcess = Process.Start(@"C:\Users\Giorgi\Documents\BOG Desktop.rdp");
-                    }
-                }
+                        Console.WriteLine("Enabling proxy");
+                        EnableProxy();
 
-                if (localIpAddress == startupIpAddress)
-                {
-                    Console.WriteLine("Disabling proxy");
-                    DisableProxy();
-
-                    if (mstscProcess != null)
-                    {
-                        mstscProcess.CloseMainWindow();
-                        Thread.Sleep(3000);
-                        if (!mstscProcess.HasExited)
+                        if (!Process.GetProcessesByName("mstsc").Any())
                         {
-                            mstscProcess.Kill();
+                            Process.Start(@"C:\Users\Giorgi\Documents\BOG Desktop.rdp");
                         }
                     }
-                }
-            });
+
+                    if (localIpAddress == startupIpAddress)
+                    {
+                        Console.WriteLine("Disabling proxy");
+                        DisableProxy();
+
+                        var mstscProcess = Process.GetProcessesByName("mstsc").FirstOrDefault();
+                        if (mstscProcess != null)
+                        {
+                            mstscProcess.CloseMainWindow();
+                            Thread.Sleep(1000);
+                            if (!mstscProcess.HasExited)
+                            {
+                                mstscProcess.Kill();
+                            }
+                        }
+                    }
+                });
 
             manualResetEvent = new ManualResetEvent(false);
             manualResetEvent.WaitOne();
@@ -99,17 +96,26 @@ namespace VpnProxyChanger
         public const int InternetOptionSettingsChanged = 39;
         private const string ProxySettingsKey = "Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings";
 
-        public static string GetLocalIPAddress()
+        public static string GetPhysicalIPAdress()
         {
-            var host = Dns.GetHostEntry(Dns.GetHostName());
-            foreach (var ip in host.AddressList)
+            foreach (var networkInterface in NetworkInterface.GetAllNetworkInterfaces())
             {
-                if (ip.AddressFamily == AddressFamily.InterNetwork)
+                var address = networkInterface.GetIPProperties().GatewayAddresses.FirstOrDefault();
+                if (address != null && !address.Address.ToString().Equals("0.0.0.0"))
                 {
-                    return ip.ToString();
+                    if (networkInterface.NetworkInterfaceType == NetworkInterfaceType.Wireless80211 || networkInterface.NetworkInterfaceType == NetworkInterfaceType.Ethernet)
+                    {
+                        foreach (var ip in networkInterface.GetIPProperties().UnicastAddresses)
+                        {
+                            if (ip.Address.AddressFamily == AddressFamily.InterNetwork)
+                            {
+                                return ip.Address.ToString();
+                            }
+                        }
+                    }
                 }
             }
-            throw new Exception("Local IP Address Not Found!");
+            return String.Empty;
         }
     }
 }
