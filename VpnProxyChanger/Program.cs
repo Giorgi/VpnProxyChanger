@@ -1,61 +1,44 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Net.NetworkInformation;
-using System.Net.Sockets;
-using System.Reactive.Linq;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.Win32;
 
 namespace VpnProxyChanger
 {
     class Program
     {
-        private static string startupIpAddress = GetPhysicalIPAdress();
         private static ManualResetEvent manualResetEvent;
 
         static void Main(string[] args)
         {
-            var networkAddressChanged = Observable.FromEventPattern<NetworkAddressChangedEventHandler, EventArgs>(handler => NetworkChange.NetworkAddressChanged += handler,
-                                                                                                    handler => NetworkChange.NetworkAddressChanged -= handler);
+            var vpnDetector = new VpnDetector();
+            vpnDetector.VpnConnected += (sender, eventArgs) =>
+            {
+                EnableProxy();
 
-            networkAddressChanged.Select(pattern => GetPhysicalIPAdress())
-                .DistinctUntilChanged().Subscribe(localIpAddress =>
+                if (!Process.GetProcessesByName("mstsc").Any())
                 {
-                    Console.WriteLine(localIpAddress);
+                    Process.Start(@"C:\Users\Giorgi\Documents\BOG Desktop.rdp");
+                }
+            };
 
-                    if (localIpAddress == "10.202.208.188")
+            vpnDetector.VpnDisconnected += (sender, eventArgs) =>
+            {
+                DisableProxy();
+
+                var mstscProcess = Process.GetProcessesByName("mstsc").FirstOrDefault();
+                if (mstscProcess != null)
+                {
+                    mstscProcess.CloseMainWindow();
+                    Thread.Sleep(1000);
+                    if (!mstscProcess.HasExited)
                     {
-                        Console.WriteLine("Enabling proxy");
-                        EnableProxy();
-
-                        if (!Process.GetProcessesByName("mstsc").Any())
-                        {
-                            Process.Start(@"C:\Users\Giorgi\Documents\BOG Desktop.rdp");
-                        }
+                        mstscProcess.Kill();
                     }
-
-                    if (localIpAddress == startupIpAddress)
-                    {
-                        Console.WriteLine("Disabling proxy");
-                        DisableProxy();
-
-                        var mstscProcess = Process.GetProcessesByName("mstsc").FirstOrDefault();
-                        if (mstscProcess != null)
-                        {
-                            mstscProcess.CloseMainWindow();
-                            Thread.Sleep(1000);
-                            if (!mstscProcess.HasExited)
-                            {
-                                mstscProcess.Kill();
-                            }
-                        }
-                    }
-                });
+                }
+            };
 
             manualResetEvent = new ManualResetEvent(false);
             manualResetEvent.WaitOne();
@@ -95,27 +78,5 @@ namespace VpnProxyChanger
         public const int InternetOptionRefresh = 37;
         public const int InternetOptionSettingsChanged = 39;
         private const string ProxySettingsKey = "Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings";
-
-        public static string GetPhysicalIPAdress()
-        {
-            foreach (var networkInterface in NetworkInterface.GetAllNetworkInterfaces())
-            {
-                var address = networkInterface.GetIPProperties().GatewayAddresses.FirstOrDefault();
-                if (address != null && !address.Address.ToString().Equals("0.0.0.0"))
-                {
-                    if (networkInterface.NetworkInterfaceType == NetworkInterfaceType.Wireless80211 || networkInterface.NetworkInterfaceType == NetworkInterfaceType.Ethernet)
-                    {
-                        foreach (var ip in networkInterface.GetIPProperties().UnicastAddresses)
-                        {
-                            if (ip.Address.AddressFamily == AddressFamily.InterNetwork)
-                            {
-                                return ip.Address.ToString();
-                            }
-                        }
-                    }
-                }
-            }
-            return String.Empty;
-        }
     }
 }
