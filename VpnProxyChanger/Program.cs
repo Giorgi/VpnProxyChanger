@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Configuration;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -14,13 +15,17 @@ namespace VpnProxyChanger
         static void Main(string[] args)
         {
             var vpnDetector = new VpnDetector();
+
+            var rdpPath = ConfigurationManager.AppSettings["rdpPath"];
+
             vpnDetector.VpnConnected += (sender, eventArgs) =>
             {
                 EnableProxy();
 
                 if (!Process.GetProcessesByName("mstsc").Any())
                 {
-                    Process.Start(@"C:\Users\Giorgi\Documents\BOG Desktop.rdp");
+                    Thread.Sleep(5000);
+                    Process.Start(rdpPath);
                 }
             };
 

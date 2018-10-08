@@ -1,4 +1,5 @@
 using System;
+using System.Configuration;
 using System.Linq;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
@@ -11,22 +12,21 @@ namespace VpnProxyChanger
         public EventHandler VpnConnected;
         public EventHandler VpnDisconnected;
 
-        private string startupIpAddress = GetPhysicalIPAdress();
-
         public VpnDetector()
         {
+            var vpnIp = ConfigurationManager.AppSettings["vpnIp"];
+
             var networkAddressChanged = Observable.FromEventPattern<NetworkAddressChangedEventHandler, EventArgs>(handler => NetworkChange.NetworkAddressChanged += handler,
                 handler => NetworkChange.NetworkAddressChanged -= handler);
 
             networkAddressChanged.Select(pattern => GetPhysicalIPAdress())
                 .DistinctUntilChanged().Subscribe(localIpAddress =>
                 {
-                    if (localIpAddress == "10.202.208.188")
+                    if (localIpAddress == vpnIp)
                     {
                         VpnConnected?.Invoke(this, EventArgs.Empty);
                     }
-
-                    if (localIpAddress == startupIpAddress)
+                    else
                     {
                         VpnDisconnected?.Invoke(this, EventArgs.Empty);
                     }
